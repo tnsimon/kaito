@@ -53,16 +53,26 @@ az identity federated-credential create --name "${FED_NAME}" \
 
 if [[ "${COMPONENT_NAME}" == "azkarpenter" ]]; then
   echo "Creating role assignments for $COMPONENT_NAME ..."
-  for role in "Virtual Machine Contributor" "Network Contributor" "Managed Identity Operator"; do
-    az role assignment create --assignee "$IDENTITY_PRINCIPAL_ID" \
-    --scope "$AZURE_RESOURCE_GROUP_MC_RESOURCE_ID" \
-    --role "$role"
+  # Well-known role definition IDs
+  ROLE_IDS=("9980e02c-c2be-4d73-94e8-173b1dc7cf3c" "4d97b98b-1d4f-4787-a291-c67834d212e7" "f1a07417-d97a-45cb-824c-7a7467783830")
+  ROLE_NAMES=("Virtual Machine Contributor" "Network Contributor" "Managed Identity Operator")
+  SCOPE="$AZURE_RESOURCE_GROUP_MC_RESOURCE_ID"
+  for i in "${!ROLE_IDS[@]}"; do
+    echo "  Assigning ${ROLE_NAMES[$i]} ..."
+    ASSIGNMENT_ID=$(uuidgen | tr '[:upper:]' '[:lower:]')
+    az rest --method PUT \
+      --url "https://management.azure.com${SCOPE}/providers/Microsoft.Authorization/roleAssignments/${ASSIGNMENT_ID}?api-version=2022-04-01" \
+      --body "{\"properties\":{\"roleDefinitionId\":\"/subscriptions/${AZURE_SUBSCRIPTION_ID}/providers/Microsoft.Authorization/roleDefinitions/${ROLE_IDS[$i]}\",\"principalId\":\"${IDENTITY_PRINCIPAL_ID}\",\"principalType\":\"ServicePrincipal\"}}" \
+      -o none 2>&1 || echo "    (may already exist, continuing)"
   done
 else
   echo "Creating role assignments for $COMPONENT_NAME ..."
-  az role assignment create --assignee "$IDENTITY_PRINCIPAL_ID" \
-  --scope "$AZURE_RESOURCE_GROUP_RESOURCE_ID" \
-  --role "Contributor"
+  # Contributor role definition ID
+  ASSIGNMENT_ID=$(uuidgen | tr '[:upper:]' '[:lower:]')
+  az rest --method PUT \
+    --url "https://management.azure.com${AZURE_RESOURCE_GROUP_RESOURCE_ID}/providers/Microsoft.Authorization/roleAssignments/${ASSIGNMENT_ID}?api-version=2022-04-01" \
+    --body "{\"properties\":{\"roleDefinitionId\":\"/subscriptions/${AZURE_SUBSCRIPTION_ID}/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c\",\"principalId\":\"${IDENTITY_PRINCIPAL_ID}\",\"principalType\":\"ServicePrincipal\"}}" \
+    -o none 2>&1 || echo "    (may already exist, continuing)"
 fi
 
 echo "Identities and role assignments for $COMPONENT_NAME have been created successfully."
